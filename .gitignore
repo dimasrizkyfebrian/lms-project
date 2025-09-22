@@ -1,0 +1,16 @@
+# Node / Nuxt frontend dependencies
+/frontend/node_modules
+/frontend/.nuxt
+/frontend/dist
+/frontend/.output
+
+# Go backend binary (jika kita compile nanti)
+/backend/*.exe
+/backend/*.out
+
+# Log files
+*.log
+
+# OS-generated files
+.DS_Store
+Thumbs.db
