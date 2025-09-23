@@ -14,3 +14,7 @@
 # OS-generated files
 .DS_Store
 Thumbs.db
+
+# Environment variables
+# Ignore all .env files in any directory
+**/.env

@@ -3,20 +3,45 @@ package main
 
 import (
 	"lms-project/backend/internal/handler"
+	"lms-project/backend/internal/middleware"
 	"lms-project/backend/internal/model"
 	"lms-project/backend/internal/repository"
 	"lms-project/backend/internal/service"
 	"log"
+	"net/http"
+	"os"
+	"time"
 
+	ratelimit "github.com/JGLTechnologies/gin-rate-limit"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
+// ... keyFunc and errorHandler remain the same ...
+func keyFunc(c *gin.Context) string { return c.ClientIP() }
+func errorHandler(c *gin.Context, info ratelimit.Info) { c.JSON(http.StatusTooManyRequests, gin.H{"error": "Too many requests"}) }
+
 func main() {
-	// --- Database Connection (sama seperti sebelumnya) ---
-	dsn := "host=localhost user=postgres password=20022003 dbname=lms_db port=5432 sslmode=disable"
+	err := godotenv.Load()
+	if err != nil {
+		log.Println("Warning: .env file not found, reading from environment")
+	}
+	
+	dsn := os.Getenv("DB_DSN")
+	if dsn == "" {
+		log.Fatal("DB_DSN environment variable not set")
+	}
+	
+	// --- LOAD JWT KEY FROM ENV ---
+	jwtKey := os.Getenv("JWT_SECRET_KEY")
+	if jwtKey == "" {
+		log.Fatal("JWT_SECRET_KEY environment variable not set")
+	}
+
+	// --- Database Connection ---
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		log.Fatal("Failed to connect to database:", err)
@@ -24,30 +49,42 @@ func main() {
 	db.AutoMigrate(&model.User{})
 	log.Println("Database migration completed.")
 
-	// --- Initialize Layers (sama seperti sebelumnya) ---
+	// --- Initialize Layers (Dependency Injection) ---
 	userRepository := repository.NewUserRepository(db)
-	userService := service.NewUserService(userRepository)
+	// Pass the jwtKey to the UserService
+	userService := service.NewUserService(userRepository, jwtKey)
 	userHandler := handler.NewUserHandler(userService)
 
-	// --- HTTP Server Setup (using Gin) ---
+	// ... Rest of the server setup remains the same ...
 	router := gin.Default()
-
-	// --- 2. TERAPKAN MIDDLEWARE CORS ---
-	// Konfigurasi ini memberitahu backend untuk mengizinkan
-	// request dari frontend Anda (localhost:3000).
 	config := cors.DefaultConfig()
-	config.AllowOrigins = []string{"http://localhost:3000"} // Izinkan origin frontend
+	config.AllowOrigins = []string{"http://localhost:3000"}
 	config.AllowMethods = []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}
 	config.AllowHeaders = []string{"Origin", "Content-Type", "Authorization"}
 	router.Use(cors.New(config))
 
-	// API v1 route group
+	store := ratelimit.InMemoryStore(&ratelimit.InMemoryOptions{
+		Rate:  time.Second * 10,
+		Limit: 1,
+	})
+	rateLimitMiddleware := ratelimit.RateLimiter(store, &ratelimit.Options{
+		ErrorHandler: errorHandler,
+		KeyFunc:      keyFunc,
+	})
+
 	apiV1 := router.Group("/api/v1")
 	{
-		apiV1.POST("/register", userHandler.Register)
+		apiV1.POST("/register", rateLimitMiddleware, userHandler.Register)
+		apiV1.POST("/login", userHandler.Login)
 		apiV1.GET("/health", func(c *gin.Context) {
 			c.JSON(200, gin.H{"status": "UP"})
 		})
+		
+		authorized := apiV1.Group("/")
+		authorized.Use(middleware.AuthMiddleware())
+		{
+			authorized.GET("/me", userHandler.GetMe)
+		}
 	}
 
 	log.Println("Starting server on http://localhost:8080")
