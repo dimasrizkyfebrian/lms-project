@@ -50,6 +50,10 @@ const token = useCookie("token");
 // Loading state for the button
 const isLoading = ref(false);
 
+definePageMeta({
+  layout: "auth",
+});
+
 // Reactive state object for our form inputs
 const state = ref({
   username: "",

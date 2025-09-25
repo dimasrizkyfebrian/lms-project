@@ -45,6 +45,10 @@ import { ref } from "vue";
 // `useToast` is a composable from Nuxt UI for showing notifications
 const toast = useToast();
 
+definePageMeta({
+  layout: "auth",
+});
+
 // Reactive state object for our form inputs
 const state = ref({
   username: "",
